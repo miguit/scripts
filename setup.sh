@@ -10,7 +10,7 @@ else
     echo "Virhe: Tiedostoa $NGINX_CONF ei löytynyt."
 fi
 
-# 2. Luodaan korjattu Munin-plugin (sisältää in-exam -tuen)
+# 2. Luodaan Munin-plugin (sisältää in-exam -tuen)
 PLUGIN_DEST="/etc/munin/plugins/abitti_students"
 
 cat << 'EOF' > "$PLUGIN_DEST"
@@ -42,7 +42,6 @@ COUNT=$(cd /opt/ktp-controller && ./ktp-controller cli status 2>/dev/null | awk 
             utctime = mktime(timestr)
             diff = now - utctime
             
-            # Hyväksytään in-exam ja in-exam-browser
             if ($0 ~ /examFinishedAt: null/ && $0 ~ /studentStatus: in-exam/ && diff < 600 && diff >= -60) {
                 count++
             }
@@ -61,4 +60,4 @@ chmod +x "$PLUGIN_DEST"
 systemctl restart nginx
 systemctl restart munin-node
 
-echo "Valmis! Skripti suoritettu onnistuneesti ilman viitteitä."
+echo "Valmis! Skripti suoritettu puhtaasti."
