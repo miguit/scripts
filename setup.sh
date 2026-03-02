@@ -10,7 +10,7 @@ else
     echo "Virhe: Tiedostoa $NGINX_CONF ei löytynyt."
 fi
 
-# 2. Luodaan Munin-plugin (sisältää in-exam -tuen)
+# 2. Luodaan Munin-plugin (nyt mukana kaikki kolme statusta)
 PLUGIN_DEST="/etc/munin/plugins/abitti_students"
 
 cat << 'EOF' > "$PLUGIN_DEST"
@@ -42,7 +42,10 @@ COUNT=$(cd /opt/ktp-controller && ./ktp-controller cli status 2>/dev/null | awk 
             utctime = mktime(timestr)
             diff = now - utctime
             
-            if ($0 ~ /examFinishedAt: null/ && $0 ~ /studentStatus: in-exam/ && diff < 600 && diff >= -60) {
+            # Hyväksytään: in-exam, in-exam-browser JA surveillance-not-on
+            if ($0 ~ /examFinishedAt: null/ && \
+                ($0 ~ /studentStatus: in-exam/ || $0 ~ /studentStatus: surveillance-not-on/) && \
+                diff < 600 && diff >= -60) {
                 count++
             }
         }
@@ -56,8 +59,8 @@ EOF
 # Oikeudet kuntoon
 chmod +x "$PLUGIN_DEST"
 
-# 3. Käynnistetään palvelut uudelleen
+# 3. Palveluiden uudelleenkäynnistys
 systemctl restart nginx
 systemctl restart munin-node
 
-echo "Valmis! Skripti suoritettu puhtaasti."
+echo "Valmis! Skripti asennettu puhtaana."
