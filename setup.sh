@@ -2,9 +2,10 @@
 set -e
 
 # 1. Nginx-muokkaus
+
 NGINX_CONF="/etc/nginx/sites-enabled/munin"
 if [ -f "$NGINX_CONF" ]; then
-    sed -i 's/8089/4049/g' "$NGINX_CONF"
+    sed -i 's/listen 8089;/listen 4049;/' "$NGINX_CONF"
 fi
 
 # 2. Luodaan Multigraph Munin-plugin
