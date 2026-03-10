@@ -2,7 +2,6 @@
 set -e
 
 # 1. Nginx-muokkaus
-
 NGINX_CONF="/etc/nginx/sites-enabled/munin"
 if [ -f "$NGINX_CONF" ]; then
     sed -i 's/listen 8089;/listen 4049;/' "$NGINX_CONF"
@@ -14,9 +13,7 @@ PLUGIN_DEST="/etc/munin/plugins/abitti_status"
 cat << 'EOF' > "$PLUGIN_DEST"
 #!/bin/bash
 
-# --- CONFIG-OSA ---
 if [ "$1" = "config" ]; then
-    # Graafi 1: Opiskelijat
     echo "multigraph abitti_students"
     echo "graph_title Abitti 2 Aktiiviset Opiskelijat"
     echo "graph_vlabel kpl"
@@ -24,17 +21,22 @@ if [ "$1" = "config" ]; then
     echo "students.label Aktiiviset"
     echo "students.draw LINE2"
 
-    # Graafi 2: Kokeet
     echo "multigraph abitti_exams"
     echo "graph_title Abitti 2 Kaynnissa olevat kokeet"
     echo "graph_vlabel kpl"
     echo "graph_category abitti"
     echo "exams.label Kokeita"
     echo "exams.draw LINE2"
+
+    echo "multigraph abitti_answers"
+    echo "graph_title Abitti 2 Vastauksia"
+    echo "graph_vlabel kpl"
+    echo "graph_category abitti"
+    echo "answers.label Vastauksia"
+    echo "answers.draw LINE2"
     exit 0
 fi
 
-# --- DATA-OSA ---
 export HOME=/tmp
 RAW_DATA=$(cd /opt/ktp-controller && ./ktp-controller cli status 2>/dev/null)
 
@@ -43,63 +45,92 @@ if [ -z "$RAW_DATA" ]; then
     echo "students.value 0"
     echo "multigraph abitti_exams"
     echo "exams.value 0"
+    echo "multigraph abitti_answers"
+    echo "answers.value 0"
     exit 0
 fi
 
-STUDENTS=$(printf '%s\n' "$RAW_DATA" | awk '
+RESULT=$(printf '%s\n' "$RAW_DATA" | awk '
 BEGIN {
-    in_students=0
-    count=0
+    in_abitti2 = 0
+    in_students = 0
+    in_exams = 0
+    students = 0
+    exams = 0
+    answers = 0
 }
 {
-    if ($0 ~ /^students:$/) {
-        in_students=1
+    if ($0 ~ /^abitti2:[[:space:]]*$/) {
+        in_abitti2 = 1
+        in_students = 0
+        in_exams = 0
         next
     }
-    if ($0 ~ /^exams:$/) {
-        in_students=0
+
+    if (in_abitti2 && $0 ~ /^[^[:space:]]/ && $0 !~ /^abitti2:[[:space:]]*$/) {
+        in_abitti2 = 0
+        in_students = 0
+        in_exams = 0
     }
-    if (in_students && $0 ~ /is_active: true/) {
-        count++
+
+    if (!in_abitti2) {
+        next
+    }
+
+    if ($0 ~ /^[[:space:]]+answer_count:[[:space:]]*[0-9]+[[:space:]]*$/) {
+        sub(/.*answer_count:[[:space:]]*/, "", $0)
+        answers = $0 + 0
+        next
+    }
+
+    if ($0 ~ /^[[:space:]]+exams:[[:space:]]*$/) {
+        in_exams = 1
+        in_students = 0
+        next
+    }
+
+    if ($0 ~ /^[[:space:]]+students:[[:space:]]*$/) {
+        in_students = 1
+        in_exams = 0
+        next
+    }
+
+    if (in_exams && $0 ~ /^[[:space:]]*-[[:space:]]+uuid:[[:space:]]*/) {
+        exams++
+        next
+    }
+
+    if (in_students && $0 ~ /is_active:[[:space:]]*true/) {
+        students++
+        next
     }
 }
 END {
-    print count+0
+    print students, exams, answers
 }')
 
-EXAMS=$(printf '%s\n' "$RAW_DATA" | awk '
-BEGIN {
-    in_exams=0
-    count=0
-}
-{
-    if ($0 ~ /^exams:$/) {
-        in_exams=1
-        next
-    }
-    if (in_exams && $0 ~ /^  - uuid:/) {
-        count++
-    }
-}
-END {
-    print count+0
-}')
+STUDENTS=$(printf '%s\n' "$RESULT" | awk "{print \$1}")
+EXAMS=$(printf '%s\n' "$RESULT" | awk "{print \$2}")
+ANSWERS=$(printf '%s\n' "$RESULT" | awk "{print \$3}")
 
-# Tulostetaan multigraph-muodossa
 echo "multigraph abitti_students"
 echo "students.value ${STUDENTS:-0}"
 
 echo "multigraph abitti_exams"
 echo "exams.value ${EXAMS:-0}"
+
+echo "multigraph abitti_answers"
+echo "answers.value ${ANSWERS:-0}"
 EOF
 
-# 3. Oikeudet ja konfiguraatio
 chmod +x "$PLUGIN_DEST"
 
-# Lisätään oikeudet ajaa rootina, jotta ktp-controller toimii
 CONF_FILE="/etc/munin/plugin-conf.d/abitti"
 echo "[abitti_status]" > "$CONF_FILE"
 echo "user root" >> "$CONF_FILE"
 
+nginx -t
+systemctl restart nginx
 systemctl restart munin-node
-echo "Valmis! Graafit on nyt erotettu toisistaan multigraph-tekniikalla."
+
+echo "Valmis! Abitti-statusplugin päivitetty."
